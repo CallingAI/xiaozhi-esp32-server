@@ -70,11 +70,6 @@ async def startToChat(conn, text):
 
     # 意图未被处理，继续常规聊天流程
     await send_stt_message(conn, text)
-    if conn.use_function_call_mode:
-        # 使用支持function calling的聊天方法
-        conn.executor.submit(conn.chat_with_function_calling, text)
-    else:
-        conn.executor.submit(conn.chat, text)
     #-----------------------------------------------------------------------------
     # 添加情绪信息到对话上下文
     if conn.current_emotion != "neutral" and conn.emotion_confidence > 50:
@@ -97,6 +92,12 @@ async def startToChat(conn, text):
         emotion_context += f" 情绪置信度为{conn.emotion_confidence}%。"
         conn.dialogue.add_system_message(emotion_context)
     #-----------------------------------------------------------------------------
+    if conn.use_function_call_mode:
+        # 使用支持function calling的聊天方法
+        conn.executor.submit(conn.chat_with_function_calling, text)
+    else:
+        conn.executor.submit(conn.chat, text)
+
 
 async def no_voice_close_connect(conn):
     if conn.client_no_voice_last_time == 0.0:
