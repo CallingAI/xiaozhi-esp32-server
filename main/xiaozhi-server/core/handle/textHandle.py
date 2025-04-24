@@ -7,7 +7,7 @@ from core.handle.receiveAudioHandle import startToChat, handleAudioMessage
 from core.handle.sendAudioHandle import send_stt_message, send_tts_message
 from core.handle.iotHandle import handleIotDescriptors, handleIotStatus
 import asyncio
-import time#-----------------------------------------------------------
+import time
 
 TAG = __name__
 logger = setup_logging()
