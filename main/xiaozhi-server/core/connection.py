@@ -115,7 +115,7 @@ class ConnectionHandler:
         self.timeout_seconds = (
             int(self.config.get("close_connection_no_voice_time", 120)) + 60
         )  # 在原来第一道关闭的基础上加60秒，进行二道关闭
-#---------------------------------------------------------------------------------
+    #---------------------------------------------------------------------------------
         # 情绪状态相关
         self.current_emotion = "neutral"  # 默认情绪状态
         self.emotion_confidence = 0       # 情绪置信度
