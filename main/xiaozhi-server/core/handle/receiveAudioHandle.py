@@ -88,8 +88,6 @@ async def startToChat(conn, text):
         else:
             emotion_context = f"用户当前情绪状态为{conn.current_emotion}，请根据这个情绪状态调整回复的语气。"
         
-        # 添加情绪置信度信息
-        emotion_context += f" 情绪置信度为{conn.emotion_confidence}%。"
         conn.dialogue.add_system_message(emotion_context)
     #-----------------------------------------------------------------------------
     if conn.use_function_call_mode:
