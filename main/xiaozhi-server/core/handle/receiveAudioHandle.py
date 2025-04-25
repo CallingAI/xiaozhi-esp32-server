@@ -72,7 +72,7 @@ async def startToChat(conn, text):
     await send_stt_message(conn, text)
     #-----------------------------------------------------------------------------
     # 添加情绪信息到对话上下文
-    if conn.current_emotion != "neutral" and conn.emotion_confidence > 50:
+    if conn.current_emotion != "neutral":
         # 根据情绪状态调整系统提示
         emotion_context = ""
         if conn.current_emotion == "happiness":
