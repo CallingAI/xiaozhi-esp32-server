@@ -9,6 +9,15 @@ server:
   # 服务器监听地址和端口(Server listening address and port)
   ip: 0.0.0.0
   port: 8000
+  # OTA接口的端口号
+  ota_port: 8002
+  # 这个websocket配置是指ota接口向设备发送的websocket地址
+  # 如果按默认的写法，ota接口会自动生成websocket地址。这个地址你可以直接用浏览器访问ota接口确认一下
+  # 当你使用docker部署或使用公网部署(使用ssl、域名)时，不一定准确
+  # 所以如果你使用docker部署或使用公网部署时，请设置正确的websocket地址
+  websocket: ws://你的ip或者域名:端口号/xiaozhi/v1/
+  # OTA返回信息时区偏移量
+  timezone_offset: +8
   # 认证配置
   auth:
     # 是否启用认证
@@ -184,6 +193,18 @@ ASR:
     type: fun_local
     model_dir: models/SenseVoiceSmall
     output_dir: tmp/
+  FunASRServer:
+    # 独立部署FunASR，使用FunASR的API服务，只需要五句话
+    # 第一句：mkdir -p ./funasr-runtime-resources/models
+    # 第二句：sudo docker run -d -p 10096:10095 --privileged=true -v $PWD/funasr-runtime-resources/models:/workspace/models registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-online-cpu-0.1.12
+    # 上一句话执行后会进入到容器，继续第三句：cd FunASR/runtime
+    # 不要退出容器，继续在容器中执行第四句：nohup bash run_server_2pass.sh --download-model-dir /workspace/models --vad-dir damo/speech_fsmn_vad_zh-cn-16k-common-onnx --model-dir damo/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-onnx  --online-model-dir damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-online-onnx  --punc-dir damo/punc_ct-transformer_zh-cn-common-vad_realtime-vocab272727-onnx --lm-dir damo/speech_ngram_lm_zh-cn-ai-wesp-fst --itn-dir thuduj12/fst_itn_zh --hotword /workspace/models/hotwords.txt > log.txt 2>&1 &
+    # 上一句话执行后会进入到容器，继续第五句：tail -f log.txt
+    # 第五句话执行完后，会看到模型下载日志，下载完后就可以连接使用了
+    # 以上是使用CPU推理，如果有GPU，详细参考：https://github.com/modelscope/FunASR/blob/main/runtime/docs/SDK_advanced_guide_online_zh.md
+    type: fun_server
+    host: 127.0.0.1
+    port: 10096
   SherpaASR:
     type: sherpa_onnx_local
     model_dir: models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17
@@ -232,8 +253,8 @@ LLM:
     api_key: 你的deepseek web key
     temperature: 0.7  # 温度值
     max_tokens: 500   # 最大生成token数
-    top_p: 1         
-    top_k: 50        
+    top_p: 1
+    top_k: 50
     frequency_penalty: 0  # 频率惩罚
 
   AliAppLLM:
@@ -243,7 +264,7 @@ LLM:
     app_id: 你的app_id
     # 可在这里找到你的 api_key https://bailian.console.aliyun.com/?apiKey=1#/api-key
     api_key: 你的api_key
-    # 是否不使用本地prompt：true|false (默不用请在百练应用中设置prompt) 
+    # 是否不使用本地prompt：true|false (默不用请在百练应用中设置prompt)
     is_no_prompt: true
     # Ali_memory_id：false（不使用）|你的memory_id（请在百练应用中设置中获取）
     # Tips！：Ali_memory未实现多用户存储记忆(记忆按id调用)
@@ -251,12 +272,12 @@ LLM:
   DoubaoLLM:
     # 定义LLM API类型
     type: openai
-    # 先开通服务，打开以下网址，开通的服务搜索Doubao-pro-32k，开通它
+    # 先开通服务，打开以下网址，开通的服务搜索Doubao-1.5-pro，开通它
     # 开通改地址：https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=%7B%7D&OpenTokenDrawer=false
     # 免费额度500000token
     # 开通后，进入这里获取密钥：https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey?apikey=%7B%7D
     base_url: https://ark.cn-beijing.volces.com/api/v3
-    model_name: doubao-pro-32k-functioncall-241028
+    model_name: doubao-1-5-pro-32k-250115
     api_key: 你的doubao web key
   DeepSeekLLM:
     # 定义LLM API类型
@@ -432,12 +453,12 @@ TTS:
   GPT_SOVITS_V2:
     # 定义TTS API类型
     #启动tts方法：
-    #python api_v2.py -a 127.0.0.1 -p 9880 -c GPT_SoVITS/configs/caixukun.yaml
+    #python api_v2.py -a 127.0.0.1 -p 9880 -c GPT_SoVITS/configs/demo.yaml
     type: gpt_sovits_v2
     url: "http://127.0.0.1:9880/tts"
     output_dir: tmp/
     text_lang: "auto"
-    ref_audio_path: "caixukun.wav"
+    ref_audio_path: "demo.wav"
     prompt_text: ""
     prompt_lang: "zh"
     top_k: 5
@@ -570,8 +591,8 @@ TTS:
   ACGNTTS:
     #在线网址：https://acgn.ttson.cn/
     #token购买：www.ttson.cn
-    #开发相关疑问请提交至3497689533@qq.com
-    #角色id获取地址：ctrl+f快速检索角色——网站管理者不允许发布,可询问网站管理者：1069379506
+    #开发相关疑问请提交至网站上的qq
+    #角色id获取地址：ctrl+f快速检索角色——网站管理者不允许发布,可询问网站管理者
     #各参数意义见开发文档：https://www.yuque.com/alexuh/skmti9/wm6taqislegb02gd?singleDoc#
     type: ttson
     token: your_token

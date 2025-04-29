@@ -226,6 +226,71 @@ class ConnectionHandler:
         elif isinstance(message, bytes):
             await handleAudioMessage(self, message)
 
+    async def handle_config_update(self, message):
+        """处理配置更新请求"""
+        content = message.get("content", {})
+        secret = content.pop("secret", None)
+        new_config = content
+
+        # 密钥验证
+        if secret != "43c716ae-37c4-49ba-84ab-2f0fbfcd7115":
+            self.logger.bind(tag=TAG).warning("配置更新请求的密钥不正确")
+            await self.websocket.send(json.dumps({
+                "type": "config_update_response",
+                "status": "error",
+                "message": "密钥不正确"
+            }))
+            return
+
+        # 遍历所有支持的配置模块
+        updated_modules = []
+        for config_model in ["tts", "llm", "vad", "asr", "memory", "intent"]:
+            if config_model not in new_config:
+                continue
+
+            new_content = new_config[config_model]
+            old_content = self.config.get(config_model, {})
+
+            # 记录配置变更
+            self.logger.bind(tag=TAG).info(
+                f"配置更新: {config_model} 旧值: {json.dumps(old_content, ensure_ascii=False)} "
+                f"新值: {json.dumps(new_content, ensure_ascii=False)}"
+            )
+
+            # 深度合并配置
+            if isinstance(old_content, dict) and isinstance(new_content, dict):
+                merged = {**old_content, **new_content}
+                self.config[config_model] = merged
+            else:
+                self.config[config_model] = new_content
+
+            # 标记需要重新初始化的模块
+            if config_model in ["llm", "tts", "asr", "vad", "intent", "memory"]:
+                updated_modules.append(config_model)
+
+        # 批量初始化模块
+        if updated_modules:
+            try:
+                self._initialize_components(self.config)
+                self.logger.bind(tag=TAG).info(
+                    f"已重新初始化模块: {', '.join(updated_modules)}"
+                )
+            except Exception as e:
+                self.logger.bind(tag=TAG).error(f"模块初始化失败: {str(e)}")
+                await self.websocket.send(json.dumps({
+                    "type": "config_update_response",
+                    "status": "error",
+                    "message": f"模块初始化失败: {str(e)}"
+                }))
+                return
+
+        # 返回成功响应
+        await self.websocket.send(json.dumps({
+            "type": "config_update_response",
+            "status": "success",
+            "message": f"已更新配置: {', '.join(updated_modules)}"
+        }))
+
     def _initialize_components(self, private_config):
         """初始化组件"""
         if private_config is not None:
@@ -253,7 +318,7 @@ class ConnectionHandler:
             )
             private_config["delete_audio"] = bool(self.config.get("delete_audio", True))
             self.logger.bind(tag=TAG).info(
-                f"{time.time() - begin_time} 秒，获取差异化配置成功: {private_config}"
+                f"{time.time() - begin_time} 秒，获取差异化配置成功: {json.dumps(filter_sensitive_info(private_config), ensure_ascii=False)}"
             )
         except DeviceNotFoundException as e:
             self.need_bind = True
@@ -453,11 +518,16 @@ class ConnectionHandler:
             current_text = full_text[processed_chars:]  # 从未处理的位置开始
 
             # 查找最后一个有效标点
-            punctuations = ("。", "？", "！", "；", "：")
+            punctuations = ("。", ".", "？", "?", "！", "!", "；", ";", "：")
             last_punct_pos = -1
+            number_flag = True
             for punct in punctuations:
                 pos = current_text.rfind(punct)
-                if pos > last_punct_pos:
+                prev_char = current_text[pos - 1] if pos - 1 >= 0 else ""
+                # 如果.前面是数字统一判断为小数
+                if prev_char.isdigit() and punct == ".":
+                    number_flag = False
+                if pos > last_punct_pos and number_flag:
                     last_punct_pos = pos
 
             # 找到分割点则处理
@@ -579,11 +649,16 @@ class ConnectionHandler:
                     current_text = full_text[processed_chars:]  # 从未处理的位置开始
 
                     # 查找最后一个有效标点
-                    punctuations = ("。", "？", "！", "；", "：")
+                    punctuations = ("。", ".", "？", "?", "！", "!", "；", ";", "：")
                     last_punct_pos = -1
+                    number_flag = True
                     for punct in punctuations:
                         pos = current_text.rfind(punct)
-                        if pos > last_punct_pos:
+                        prev_char = current_text[pos - 1] if pos - 1 >= 0 else ""
+                        # 如果.前面是数字统一判断为小数
+                        if prev_char.isdigit() and punct == ".":
+                            number_flag = False
+                        if pos > last_punct_pos and number_flag:
                             last_punct_pos = pos
 
                     # 找到分割点则处理
@@ -890,7 +965,7 @@ class ConnectionHandler:
             self.executor = None
 
         # 清空任务队列
-        self._clear_queues()
+        self.clear_queues()
 
         if ws:
             await ws.close()
@@ -898,8 +973,11 @@ class ConnectionHandler:
             await self.websocket.close()
         self.logger.bind(tag=TAG).info("连接资源已释放")
 
-    def _clear_queues(self):
+    def clear_queues(self):
         # 清空所有任务队列
+        self.logger.bind(tag=TAG).debug(
+            f"开始清理: TTS队列大小={self.tts_queue.qsize()}, 音频队列大小={self.audio_play_queue.qsize()}"
+        )
         for q in [self.tts_queue, self.audio_play_queue]:
             if not q:
                 continue
@@ -911,6 +989,9 @@ class ConnectionHandler:
             q.queue.clear()
             # 添加毒丸信号到队列，确保线程退出
             # q.queue.put(None)
+        self.logger.bind(tag=TAG).debug(
+            f"清理结束: TTS队列大小={self.tts_queue.qsize()}, 音频队列大小={self.audio_play_queue.qsize()}"
+        )
 
     def reset_vad_states(self):
         self.client_audio_buffer = bytearray()
@@ -941,3 +1022,36 @@ class ConnectionHandler:
                     break
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"超时检查任务出错: {e}")
+
+
+def filter_sensitive_info(config: dict) -> dict:
+    """
+    过滤配置中的敏感信息
+    Args:
+        config: 原始配置字典
+    Returns:
+        过滤后的配置字典
+    """
+    sensitive_keys = [
+        "api_key",
+        "personal_access_token",
+        "access_token",
+        "token",
+        "access_key_secret",
+        "secret_key",
+    ]
+
+    def _filter_dict(d: dict) -> dict:
+        filtered = {}
+        for k, v in d.items():
+            if any(sensitive in k.lower() for sensitive in sensitive_keys):
+                filtered[k] = "***"
+            elif isinstance(v, dict):
+                filtered[k] = _filter_dict(v)
+            elif isinstance(v, list):
+                filtered[k] = [_filter_dict(i) if isinstance(i, dict) else i for i in v]
+            else:
+                filtered[k] = v
+        return filtered
+
+    return _filter_dict(copy.deepcopy(config))
